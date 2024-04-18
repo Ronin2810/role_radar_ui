@@ -5,104 +5,12 @@ from gensim.models import Word2Vec
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from nltk.tokenize import word_tokenize
-
-# import torch
-# from transformers import DebertaModel,DebertaTokenizer,DebertaConfig
-# from transformers import RobertaModel,RobertaTokenizer,RobertaConfig
-# from transformers import DistilBertModel,DistilBertTokenizer,DistilBertConfig
-
-# model_path = "/content/drive/MyDrive/Apoorvaraj BE Project/deberta_model.pth"
-# model.load_state_dict(torch.load(model_path))
-
-# DEBERTA MODEL
-# config = DebertaConfig.from_pretrained('microsoft/deberta-base')
-# model = DebertaModel(config)
-# model.load_state_dict(torch.load('./deberta_model.pth',map_location=torch.device('cpu')))
-# tokenizer = DebertaTokenizer.from_pretrained('microsoft/deberta-base')
-# model.eval()
-
-#ROBERTA MODEL
-# config = RobertaConfig.from_pretrained('roberta-base')
-# model = RobertaModel(config)
-# model.load_state_dict(torch.load('./roberta_model.pth',map_location=torch.device('cpu')))
-# tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
-# model.eval()
-
-#DISTILBERT MODEL
-# config = DistilBertConfig.from_pretrained('distilbert-base-uncased')
-# model = DistilBertModel(config)
-# model.load_state_dict(torch.load('./distilbert_model.pth',map_location=torch.device('cpu')))
-# tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
-# model.eval()
-
-
-
-# def predict_score(jd, profile):
-#     # Tokenize input text
-#     inputs = tokenizer(jd, profile, return_tensors="pt", max_length=512, truncation=True)
-
-#     # Forward pass through the model
-#     with torch.no_grad():
-#         outputs = model(**inputs)
-
-#     # Extract the output embedding
-#     output_embedding = outputs.last_hidden_state.mean(dim=1)
-
-#     # Perform further processing or computations as needed
-#     # For example, you can pass the output embedding through a linear layer to get the final score
-#     # Here, we'll just return the output embedding for demonstration purposes
-#     return output_embedding
-
-
-# import torch.nn as nn
-
-# class ScoringModel(nn.Module):
-#     def __init__(self, input_size, hidden_size=512):
-#         super(ScoringModel, self).__init__()
-#         self.linear1 = nn.Linear(input_size, hidden_size)
-#         self.relu = nn.ReLU()
-#         self.linear2 = nn.Linear(hidden_size, hidden_size)
-#         self.relu = nn.ReLU()
-#         self.linear3 = nn.Linear(hidden_size, 1)
-#         self.sigmoid = nn.Sigmoid()
-
-#     def forward(self, x):
-#         x = self.linear1(x)
-#         x = self.relu(x)
-#         x = self.linear2(x)
-        
-#         x = self.relu(x)
-#         x = self.linear2(x)
-        
-#         x = self.relu(x)
-#         x = self.linear2(x)
-        
-#         x = self.relu(x)
-#         x = self.linear3(x)
-        
-#         x = self.sigmoid(x)
-#         print(x)
-#         return x
-#         print(x)
-
-# # Initialize the scoring model
-# scoring_model = ScoringModel(config.hidden_size)
-
-# def predict_score(jd, profile):
-#     # Tokenize input text
-#     inputs = tokenizer(jd, profile, return_tensors="pt", max_length=512, truncation=True)
-
-#     # Forward pass through the BERT model
-#     with torch.no_grad():
-#         outputs = model(**inputs)
-
-#     # Extract the output embedding
-#     output_embedding = outputs.last_hidden_state.mean(dim=1)
-
-#     # Forward pass through the scoring model
-#     score = scoring_model(output_embedding)
-
-#     return score.item()
+import re
+import nltk
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+import http.client
+import json
 
 word2vec_model = Word2Vec.load('vectorizer.model')
 def calculate_similarity(text1, text2):
@@ -123,11 +31,104 @@ def extract_text_from_pdf(file):
             text += page.extract_text()
     return text
 
-# # Function to make prediction based on text
-# def predict(text):
-#     # Your prediction logic here
-#     prediction = "Your prediction goes here"
-#     return prediction
+def preprocess_text(text):
+    # Remove bullet points
+    text = re.sub(r'\s*[\u2022\u2023\u25E6\u2043\u2219]\s+', ' ', text)
+    # Remove unnecessary punctuations, special characters, and newlines
+    text = re.sub(r'[^\w\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    # Remove stopwords
+    stop_words = set(stopwords.words('english'))
+    resume_tokens = text.split()
+    filtered_resume = [word for word in resume_tokens if word.lower() not in stop_words]
+    text = ' '.join(filtered_resume)
+    return text.strip()
+
+def make_post_request(text):
+    # Define the server address and endpoint
+    server_address = 'localhost:11434'
+    endpoint = '/api/generate'
+    # Define the payload
+    payload = {
+        "model": "mistral",
+        "prompt": f"Extract and list only core technologies in the following text:{text} "
+    }
+    # Convert payload to JSON string
+    payload_json = json.dumps(payload)
+
+    try:
+        # Create a connection to the server
+        connection = http.client.HTTPConnection(server_address)
+        # Define request headers
+        headers = {'Content-Type': 'application/json'}
+        # Send the POST request
+        connection.request('POST', endpoint, payload_json, headers)
+        # Get the response
+        response = connection.getresponse()
+        # Print the response status and data
+        print("Response status:", response.status)
+        print("Response data:")
+        response_output = response.read().decode('utf-8').split('\n') 
+        json_arr = []
+        for i in range(len(response_output)-2):
+            json_file = json.loads(response_output[i])
+            json_arr.append(json_file)
+
+        output_string = ""
+        for json_obj in json_arr:
+            output_string+=json_obj["response"]
+        print(output_string)
+        # Close the connection
+        connection.close()
+        return output_string
+    except Exception as e:
+        print("Error:", e)
+
+
+def make_post_request_new(jd,resume):
+    # Define the server address and endpoint
+    server_address = 'localhost:11434'
+    endpoint = '/api/generate'
+    # Define the payload
+    payload = {
+        "model": "mistral",
+        "prompt": f"Two texts will be provided which include the core technologies present in the JD and a resume. List only the technologies that are present in the JD but not in the resume. Here is the JD: {jd}\nHere is the Resume: {resume}"
+    }
+    # Convert payload to JSON string
+    payload_json = json.dumps(payload)
+
+    try:
+        # Create a connection to the server
+        connection = http.client.HTTPConnection(server_address)
+        # Define request headers
+        headers = {'Content-Type': 'application/json'}
+        # Send the POST request
+        connection.request('POST', endpoint, payload_json, headers)
+        # Get the response
+        response = connection.getresponse()
+        # Print the response status and data
+        print("Response status:", response.status)
+        print("Response data:")
+        response_output = response.read().decode('utf-8').split('\n') 
+        json_arr = []
+        for i in range(len(response_output)-2):
+            json_file = json.loads(response_output[i])
+            json_arr.append(json_file)
+
+        output_string = ""
+        for json_obj in json_arr:
+            output_string+=json_obj["response"]
+        print(output_string)
+        # Close the connection
+        connection.close()
+        return output_string
+    except Exception as e:
+        print("Error:", e)
+
+
+
+
+
 
 def main():
     st.title("Role Radar")
@@ -148,6 +149,9 @@ def main():
             # Extract text from second PDF
             profile = extract_text_from_pdf(file_2)
 
+            jd = preprocess_text(jd)
+            profile = preprocess_text(profile)
+            
             tokenized_jd = tokenize_text(jd)
             tokenized_profile = tokenize_text(profile)
             # Combine text from both PDFs
@@ -159,6 +163,15 @@ def main():
             print("Resume:\n",profile)
             # Display prediction
             st.success(f"Similarity Score: {prediction*100}%")
+
+            # Fetch Prompt here
+            jd_skills = make_post_request(jd)
+            st.success(f"SKILLS IN JD\n{jd_skills}")
+            resume_skills = make_post_request(profile)
+            st.success(f"SKILLS IN RESUME\n{resume_skills}")
+            lacking_skills = make_post_request_new(jd_skills,resume_skills)
+            st.error(f"SKILLS LACKING IN RESUME:\n{lacking_skills}")
+
 
 if __name__ == "__main__":
     main()
